@@ -1,7 +1,5 @@
 flask
 requests
-openai-whisper
-torch
 realitydefender
 ffmpeg-python
 gunicorn

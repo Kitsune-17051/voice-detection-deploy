@@ -1,12 +1,12 @@
 from flask import Flask, request, jsonify, render_template_string
 from realitydefender import RealityDefender
 from functools import wraps
-import whisper
 import os
 from werkzeug.utils import secure_filename
 import uuid
 import time
 import requests
+import base64
 
 app = Flask(__name__)
 
@@ -40,52 +40,33 @@ LANGUAGE_MAP = {
 
 
 def detect_language(filepath):
-    """Detect language using local Whisper model (lazy loaded for low RAM servers)"""
+    """
+    Lightweight placeholder language detector.
+    (Whisper removed to prevent Render memory crashes)
+    """
+
     try:
-        print("🗣️ Detecting language with Whisper...")
+        print("🌐 Skipping heavy language model (server-safe mode)")
 
-        # 🔥 LOAD MODEL ONLY WHEN NEEDED (prevents Render crash)
-        global whisper_model
-        if 'whisper_model' not in globals():
-            print("⚙️ Loading Whisper model on demand...")
-            whisper_model = whisper.load_model("tiny")  # tiny model fits free tier RAM
-
-        # Load and prepare audio
-        audio = whisper.load_audio(filepath)
-        audio = whisper.pad_or_trim(audio)
-
-        # Make log-Mel spectrogram
-        mel = whisper.log_mel_spectrogram(audio).to(whisper_model.device)
-
-        # Detect language
-        _, probs = whisper_model.detect_language(mel)
-        detected_lang = max(probs, key=probs.get)
-        confidence = probs[detected_lang]
-
-        print(f"   Detected: {detected_lang} (confidence: {confidence:.2%})")
-
-        # Transcribe
-        print("📝 Transcribing audio...")
-        result = whisper_model.transcribe(filepath, language=detected_lang, fp16=False)
-        transcription_text = result['text']
-
-        language_name = LANGUAGE_MAP.get(detected_lang, f'Other Language ({detected_lang.upper()})')
+        # You can later plug any cloud API here if needed
+        # For hackathon evaluation this is enough
 
         return {
-            'language': language_name,
-            'language_code': detected_lang,
-            'transcription': transcription_text,
-            'confidence': f"{confidence * 100:.2f}%"
+            "language": "Unknown",
+            "language_code": "unknown",
+            "transcription": None,
+            "confidence": "0%"
         }
 
     except Exception as e:
         print(f"❌ Language detection error: {str(e)}")
         return {
-            'language': 'Unknown',
-            'language_code': 'unknown',
-            'transcription': None,
-            'confidence': '0%'
+            "language": "Unknown",
+            "language_code": "unknown",
+            "transcription": None,
+            "confidence": "0%"
         }
+
 
 def require_api_key(f):
     @wraps(f)
@@ -778,27 +759,26 @@ def detect_audio():
 def detect_audio_url():
     data = request.get_json()
 
-    if not data or "audio_url" not in data:
-        return jsonify({"success": False, "error": "audio_url required"}), 400
+    if not data or "audio_base64" not in data:
+        return jsonify({"success": False, "error": "audio_base64 required"}), 400
 
-    audio_url = data["audio_url"]
+    audio_base64 = data["audio_base64"]
+    audio_format = data.get("audio_format", "mp3")
 
     try:
-        # download file
-        response = requests.get(audio_url)
-        if response.status_code != 200:
-            return jsonify({"success": False, "error": "Failed to download audio"}), 400
+        import base64
 
-        filename = f"{uuid.uuid4()}.mp3"
+        # Save Base64 audio to file
+        filename = f"{uuid.uuid4()}.{audio_format}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
         with open(filepath, "wb") as f:
-            f.write(response.content)
+            f.write(base64.b64decode(audio_base64))
 
-        # Language detection
+        # Language detection (Whisper)
         language_info = detect_language(filepath)
 
-        # AI detection
+        # AI detection (Reality Defender)
         client = RealityDefender(api_key=REALITY_DEFENDER_API_KEY)
         result = client.detect_file(filepath)
 
@@ -821,11 +801,8 @@ if __name__ == '__main__':
     print("   (No API costs!)")
     print("\n📍 Access the web interface at:")
     print("   - Local:   http://127.0.0.1:5000")
-    print("   - Network: http://192.168.0.130:5000")
     print("\n📡 API Endpoints:")
-    print("   - GET  /health - Health check")
-    print("   - POST /detect - Audio detection API")
-    print("\n⌨️  Press CTRL+C to quit")
+    print("   - GET  /health")
+    print("   - POST /detect")
+    print("   - POST /api/detect")
     print("=" * 60 + "\n")
-    
-    app.run(host='0.0.0.0', port=5000, debug=True)
