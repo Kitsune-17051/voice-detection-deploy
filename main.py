@@ -756,29 +756,35 @@ def detect_audio():
 
 @app.route('/api/detect', methods=['POST'])
 @require_api_key
-def detect_audio_url():
+def detect_audio_base64():
     data = request.get_json()
 
-    if not data or "audio_base64" not in data:
-        return jsonify({"success": False, "error": "audio_base64 required"}), 400
-
-    audio_base64 = data["audio_base64"]
+    # Hackathon tester sends these keys
+    audio_base64 = data.get("audio_base64_format")
     audio_format = data.get("audio_format", "mp3")
+
+    if not audio_base64:
+        return jsonify({"success": False, "error": "audio_base64_format required"}), 400
 
     try:
         import base64
 
-        # Save Base64 audio to file
+        # Save decoded audio
         filename = f"{uuid.uuid4()}.{audio_format}"
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
 
         with open(filepath, "wb") as f:
             f.write(base64.b64decode(audio_base64))
 
-        # Language detection (Whisper)
-        language_info = detect_language(filepath)
+        # Lightweight language placeholder (no Whisper)
+        language_info = {
+            "language": "Unknown",
+            "language_code": "unknown",
+            "transcription": None,
+            "confidence": "0%"
+        }
 
-        # AI detection (Reality Defender)
+        # AI detection
         client = RealityDefender(api_key=REALITY_DEFENDER_API_KEY)
         result = client.detect_file(filepath)
 
@@ -793,6 +799,7 @@ def detect_audio_url():
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
 if __name__ == '__main__':
     print("=" * 60)
     print("🚀 Reality Defender Audio Detection Server")
