@@ -690,7 +690,7 @@ def health_check():
     return jsonify({'status': 'healthy', 'service': 'Reality Defender Audio Detection'}), 200
 
 @app.route('/detect', methods=['POST'])
-@require_api_key
+# @require_api_key
 def detect_audio():
     """API endpoint for audio detection"""
     if 'file' not in request.files:
