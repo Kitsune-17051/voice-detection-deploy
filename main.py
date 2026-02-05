@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify, render_template_string
 from realitydefender import RealityDefender
+from functools import wraps
 import whisper
 import os
 from werkzeug.utils import secure_filename
 import uuid
 import time
+import requests
 
 app = Flask(__name__)
 
@@ -13,6 +15,7 @@ UPLOAD_FOLDER = 'uploads'
 ALLOWED_EXTENSIONS = {'wav', 'mp3', 'mp4', 'mpeg', 'ogg', 'flac', 'm4a'}
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 REALITY_DEFENDER_API_KEY = "rd_e6d7ab992c790304_9ba5c7b2b1a5888164e22c78da664867"
+HACKATHON_API_KEY = "guvi_voice_2026" 
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
@@ -28,6 +31,7 @@ print("✅ Whisper model loaded!")
 # ---------------------------------------------------------
 # 1. UPDATED LANGUAGE MAPPING (Added Malayalam)
 # ---------------------------------------------------------
+
 LANGUAGE_MAP = {
     'hi': 'Hindi',
     'en': 'English',
@@ -35,6 +39,8 @@ LANGUAGE_MAP = {
     'te': 'Telugu',
     'ml': 'Malayalam'  # Added Malayalam
 }
+
+
 
 def detect_language(filepath):
     """Detect language using FREE local Whisper model"""
@@ -80,6 +86,21 @@ def detect_language(filepath):
             'transcription': None,
             'confidence': '0%'
         }
+def require_api_key(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization")
+
+        if not auth_header or auth_header != f"Bearer {HACKATHON_API_KEY}":
+            return jsonify({
+                "success": False,
+                "error": "Unauthorized - Invalid API Key"
+            }), 401
+
+        return f(*args, **kwargs)
+    return decorated
+    
+
 
 # HTML Template
 HTML_TEMPLATE = '''
@@ -668,6 +689,7 @@ def health_check():
     return jsonify({'status': 'healthy', 'service': 'Reality Defender Audio Detection'}), 200
 
 @app.route('/detect', methods=['POST'])
+@require_api_key
 def detect_audio():
     """API endpoint for audio detection"""
     if 'file' not in request.files:
@@ -750,6 +772,46 @@ def detect_audio():
             'error': str(e)
         }), 500
 
+@app.route('/api/detect', methods=['POST'])
+@require_api_key
+def detect_audio_url():
+    data = request.get_json()
+
+    if not data or "audio_url" not in data:
+        return jsonify({"success": False, "error": "audio_url required"}), 400
+
+    audio_url = data["audio_url"]
+
+    try:
+        # download file
+        response = requests.get(audio_url)
+        if response.status_code != 200:
+            return jsonify({"success": False, "error": "Failed to download audio"}), 400
+
+        filename = f"{uuid.uuid4()}.mp3"
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+
+        with open(filepath, "wb") as f:
+            f.write(response.content)
+
+        # Language detection
+        language_info = detect_language(filepath)
+
+        # AI detection
+        client = RealityDefender(api_key=REALITY_DEFENDER_API_KEY)
+        result = client.detect_file(filepath)
+
+        detection_data = parse_detection_result(result, language_info)
+
+        os.remove(filepath)
+
+        return jsonify({
+            "success": True,
+            "detection": detection_data
+        }), 200
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 if __name__ == '__main__':
     print("=" * 60)
     print("🚀 Reality Defender Audio Detection Server")
