@@ -23,10 +23,7 @@ app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
 # Create upload folder if it doesn't exist
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Load Whisper model once at startup
-print("🔄 Loading Whisper model (this may take a minute on first run)...")
-whisper_model = whisper.load_model("base")
-print("✅ Whisper model loaded!")
+
 
 # ---------------------------------------------------------
 # 1. UPDATED LANGUAGE MAPPING (Added Malayalam)
@@ -43,41 +40,44 @@ LANGUAGE_MAP = {
 
 
 def detect_language(filepath):
-    """Detect language using FREE local Whisper model"""
+    """Detect language using local Whisper model (lazy loaded for low RAM servers)"""
     try:
-        print("🗣️  Detecting language with local Whisper...")
-        
+        print("🗣️ Detecting language with Whisper...")
+
+        # 🔥 LOAD MODEL ONLY WHEN NEEDED (prevents Render crash)
+        global whisper_model
+        if 'whisper_model' not in globals():
+            print("⚙️ Loading Whisper model on demand...")
+            whisper_model = whisper.load_model("tiny")  # tiny model fits free tier RAM
+
         # Load and prepare audio
         audio = whisper.load_audio(filepath)
         audio = whisper.pad_or_trim(audio)
-        
+
         # Make log-Mel spectrogram
         mel = whisper.log_mel_spectrogram(audio).to(whisper_model.device)
-        
+
         # Detect language
         _, probs = whisper_model.detect_language(mel)
         detected_lang = max(probs, key=probs.get)
         confidence = probs[detected_lang]
-        
+
         print(f"   Detected: {detected_lang} (confidence: {confidence:.2%})")
-        
+
         # Transcribe
         print("📝 Transcribing audio...")
         result = whisper_model.transcribe(filepath, language=detected_lang, fp16=False)
         transcription_text = result['text']
-        
-        # Map to categories
-        if detected_lang in LANGUAGE_MAP:
-            language_name = LANGUAGE_MAP[detected_lang]
-        else:
-            language_name = f'Other Language ({detected_lang.upper()})'
-        
+
+        language_name = LANGUAGE_MAP.get(detected_lang, f'Other Language ({detected_lang.upper()})')
+
         return {
             'language': language_name,
             'language_code': detected_lang,
             'transcription': transcription_text,
             'confidence': f"{confidence * 100:.2f}%"
         }
+
     except Exception as e:
         print(f"❌ Language detection error: {str(e)}")
         return {
@@ -86,6 +86,7 @@ def detect_language(filepath):
             'transcription': None,
             'confidence': '0%'
         }
+
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
