@@ -71,9 +71,9 @@ def detect_language(filepath):
 def require_api_key(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization")
+        api_key = request.headers.get("x-api-key")
 
-        if not auth_header or auth_header != f"Bearer {HACKATHON_API_KEY}":
+        if not api_key or api_key.strip() != HACKATHON_API_KEY:
             return jsonify({
                 "success": False,
                 "error": "Unauthorized - Invalid API Key"
@@ -81,7 +81,7 @@ def require_api_key(f):
 
         return f(*args, **kwargs)
     return decorated
-    
+
 
 
 # HTML Template
