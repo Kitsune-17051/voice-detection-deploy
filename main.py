@@ -754,17 +754,27 @@ def detect_audio():
             'error': str(e)
         }), 500
 
+
 @app.route('/api/detect', methods=['POST'])
 @require_api_key
 def detect_audio_base64():
     data = request.get_json()
+    
+    # Print received data for debugging
+    print("📥 Received data keys:", list(data.keys()) if data else "No data")
 
-    # Hackathon tester sends these keys
-    audio_base64 = data.get("audio_base64_format")
+    # The hackathon form sends base64 data in "audio_base64_format" field
+    audio_base64 = data.get("audio_base64_format") or data.get("audio_base64")
     audio_format = data.get("audio_format", "mp3")
+    language = data.get("language", "unknown")
 
     if not audio_base64:
-        return jsonify({"success": False, "error": "audio_base64_format required"}), 400
+        print("❌ Missing audio_base64_format in request")
+        return jsonify({
+            "success": False, 
+            "error": "audio_base64_format required",
+            "received_keys": list(data.keys()) if data else []
+        }), 400
 
     try:
         import base64
